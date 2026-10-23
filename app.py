@@ -5,9 +5,14 @@ from PIL import Image
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 
-st.title("🛡️ 絕對無損·精準去浮水印工具")
+# 設定寬螢幕模式，讓畫面變寬、視野極佳
+st.set_page_config(
+    page_title="極速無痕去除浮水印工具", page_icon="🛡️", layout="wide"
+)
+
+st.title("🛡️ 專業無損·精準去浮水印工具")
 st.write(
-    "**操作步驟**：先用紅筆在浮水印上塗抹，然後點擊下方按鈕，即可秒速完美清除！"
+    "**絕對不破壞原圖**：在左側調整筆刷大小，直接在圖片上的浮水印塗抹，再點擊側邊欄的按鈕即可！"
 )
 
 uploaded_file = st.file_uploader(
@@ -18,9 +23,20 @@ if uploaded_file is not None:
   bg_image = Image.open(uploaded_file).convert("RGB")
   w, h = bg_image.size
 
-  stroke_width = st.slider("筆刷大小", 3, 40, 12)
+  # 側邊欄控制區：操作直覺、畫面乾淨
+  with st.sidebar:
+    st.subheader("🛠️ 調整與控制")
+    stroke_width = st.slider("筆刷大小", 5, 60, 20)
+    st.markdown("---")
+    clear_btn = st.button(
+        "✨ 開始清除塗抹處浮水印", type="primary", use_container_width=True
+    )
+    st.info(
+        "💡 **操作步驟**：\n1. 在右側圖片上用筆刷塗抹浮水印。\n2. 點擊上方按鈕執行清除。\n3."
+        " 滿意後直接下載！"
+    )
 
-  st.info("💡 提示：請在圖片上的浮水印塗上紅筆，再按下方按鈕。")
+  st.write("### 🖼️ 圖片塗抹編輯區")
 
   # 繪圖畫布
   canvas_result = st_canvas(
@@ -28,14 +44,14 @@ if uploaded_file is not None:
       stroke_width=stroke_width,
       stroke_color="#FF0000",
       background_image=bg_image,
-      update_streamlit=False,  # 關閉即時更新，改由按鈕觸發最穩定
+      update_streamlit=False,
       height=h,
       width=w,
       drawing_mode="freedraw",
-      key="canvas_stable_v1",
+      key="canvas_pro_v1",
   )
 
-  if st.button("✨ 開始清除塗抹處浮水印", type="primary", use_container_width=True):
+  if clear_btn:
     image_data = None
     if canvas_result is not None:
       try:
@@ -44,19 +60,16 @@ if uploaded_file is not None:
         image_data = None
 
     if image_data is not None:
-      # 透過精準辨識畫面上的「紅色筆刷」來建立遮罩（100% 準確抓取塗抹處）
       canvas_rgba = image_data
-      r = canvas_rgba[:, :, 0]
-      g = canvas_rgba[:, :, 1]
-      b = canvas_rgba[:, :, 2]
+      canvas_rgb = canvas_rgba[:, :, :3].astype(np.int16)
+      img_np = np.array(bg_image).astype(np.int16)
 
-      # 只要是紅色筆刷經過的像素，就標記為遮罩
-      mask_binary = np.where(
-          (r > 200) & (g < 50) & (b < 50), 255, 0
-      ).astype(np.uint8)
+      # 嚴格像素比對：抓取畫布與原圖有差異的軌跡作為遮罩
+      diff = np.sum(np.abs(canvas_rgb - img_np), axis=2)
+      mask_binary = np.where(diff > 5, 255, 0).astype(np.uint8)
 
       if np.count_nonzero(mask_binary) > 0:
-        with st.spinner("✨ 正在智慧無痕修復中..."):
+        with st.spinner("✨ 正在進行智慧無痕修復中..."):
           img_np_uint8 = np.array(bg_image)
           dst_np = cv2.inpaint(
               img_np_uint8,
@@ -66,14 +79,26 @@ if uploaded_file is not None:
           )
 
           result_img = Image.fromarray(dst_np)
+
+          st.markdown("---")
+          st.subheader("📊 處理結果對比")
+
+          # 雙欄並排對比
+          col1, col2 = st.columns(2)
+          with col1:
+            st.image(bg_image, caption="原始圖片", use_container_width=True)
+          with col2:
+            st.image(
+                result_img,
+                caption="處理後結果（完美無損）",
+                use_container_width=True,
+            )
+
           st.success(
-              "✨ 浮水印已完美清除！其他未塗抹區域 100% 完好如初，絕無破壞。"
-          )
-          st.image(
-              result_img, caption="處理後結果", use_container_width=True
+              "✨ 浮水印已完美清除！其他未塗抹區域受到 100% 完整保護，絕無破壞。"
           )
 
-          # 提供直接下載按鈕
+          # 下載按鈕
           buf = io.BytesIO()
           result_img.save(buf, format="JPEG", quality=95)
           st.download_button(
@@ -84,6 +109,8 @@ if uploaded_file is not None:
               use_container_width=True,
           )
       else:
-        st.warning("⚠️ 尚未偵測到紅筆塗抹痕跡，請先在圖片上塗抹浮水印再點按鈕！")
+        st.warning(
+            "⚠️ 尚未偵測到塗抹痕跡！請先在圖片上的浮水印位置用筆刷塗抹後再點擊按鈕。"
+        )
     else:
-      st.warning("⚠️ 畫布資料讀取中，請重新整理或重新塗抹一次！")
+      st.warning("⚠️ 畫布資料尚未讀取，請在圖片上進行塗抹後再點擊按鈕！")
